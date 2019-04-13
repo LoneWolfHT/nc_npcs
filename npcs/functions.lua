@@ -19,6 +19,7 @@ function npcs.set_task(pos, name)
 	local npcname = meta:get_string("name")
 
 	meta:set_string("task", name)
+	meta:set_int("busy", 1)
 	meta:set_string("infotext", string.format(npcs.tasks[name].info, npcname))
 	npcs.tasks[name].func(pos)
 end

@@ -74,6 +74,8 @@ npcs.register_task("wait", {
 				npcs.set_task(pos, "wait_tree")
 			end
 		end
+
+		minetest.get_meta(p):set_int("busy", 0)
 	end
 })
 
@@ -106,6 +108,7 @@ npcs.register_task("dig_tree", {
 		end
 
 		minetest.set_node(rootpos, {name = "nc_tree:eggcorn_planted"})
+		minetest.get_meta(p):set_int("busy", 0)
 	end
 })
 
@@ -153,6 +156,7 @@ minetest.register_lbm({
 })
 
 local deactivate_step = 0
+local activate_step = 0
 minetest.register_globalstep(function(dtime)
 	if deactivate_step <= 20 then
 		deactivate_step = deactivate_step + dtime
@@ -162,6 +166,16 @@ minetest.register_globalstep(function(dtime)
 				if vector.distance(player:get_pos(), p) >= 40 then
 					npcs.deactivate_npc(p)
 				end
+			end
+		end
+	end
+
+	if activate_step <= 20 then
+		activate_step = activate_step + dtime
+	else
+		for _, p in ipairs(npcs.active) do
+			if minetest.get_meta(p):get_int("busy") == 0 then
+				npcs.set_task(pos, "wait")
 			end
 		end
 	end
