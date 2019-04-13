@@ -1,7 +1,10 @@
-local anim = {
+npcs.anim = {
 	stand     = {x = 0,   y = 0},
 	sit       = {x = 1,   y = 1},
 	walk      = {x = 2,   y = 42},
+	mine      = {x = 43,  y = 57},
+	lay       = {x = 58,  y = 58},
+	walk_mine = {x = 59,  y = 103},
 }
 
 function npcs.log(text)
@@ -18,6 +21,11 @@ function npcs.set_task(pos, name)
 	local meta = minetest.get_meta(pos)
 	local npcname = meta:get_string("name")
 
+	if not npcs.tasks[name] then
+		npcs.log("No such task: "..dump(name))
+		return
+	end
+
 	meta:set_string("task", name)
 	meta:set_int("busy", 1)
 	meta:set_string("infotext", string.format(npcs.tasks[name].info, npcname))
@@ -27,9 +35,10 @@ end
 -- Movement
 
 function npcs.move(pos1, pos2, def)
-	local obj = npcs.active[minetest.pos_to_string(vector.round(pos1))]
+	local obj = npcs.active[npcs.pts(pos1)]
 	local dist = vector.new(2, 2, 2)
 
+	minetest.get_meta(pos1):set_int("busy", 1)
 	obj:get_luaentity().nodemeta = minetest.get_meta(pos1):to_table()
 	obj:get_luaentity().def = def
 	minetest.remove_node(pos1)
@@ -61,8 +70,15 @@ function npcs.move(pos1, pos2, def)
 			end
 		end
 
-		obj:set_animation(anim.walk, 40)
-		obj:get_luaentity().move(obj, pos1, pos2)
+		obj:set_animation(npcs.anim.walk, 40)
+		local _, s = pathfinder.find(pos1, pos2, 500)
+
+		if s then
+			obj:get_luaentity().move(obj, pos1, pos2)
+		else
+			npcs.log("Couldn't find a path")
+			npcs.stop_move(obj, false)
+		end
 	else
 		npcs.log("Couldn't find any air near destination")
 		npcs.stop_move(obj, false)
@@ -75,10 +91,11 @@ function npcs.stop_move(obj, success)
 	minetest.set_node(pos, {name = "npcs:npc"})
 	minetest.set_node(vector.new(pos.x, pos.y+1, pos.z), {name = "npcs:hidden"})
 	minetest.get_meta(pos):from_table(obj:get_luaentity().nodemeta)
-	obj:set_animation(anim.stand)
+	obj:set_animation(npcs.anim.stand)
+	minetest.get_meta(pos):set_int("busy", 0)
 
-	if success and obj:get_luaentity().def and obj:get_luaentity().def.on_end then
-		obj:get_luaentity().def.on_end()
+	if obj:get_luaentity().def and obj:get_luaentity().def.on_end then
+		obj:get_luaentity().def.on_end(success)
 		obj:get_luaentity().def = nil
 	end
 end
@@ -101,13 +118,11 @@ function npcs.activate_npc(pos)
 		minetest.set_node(pos_up, {name = "npcs:hidden"})
 	end
 
-	npcs.active[minetest.pos_to_string(vector.round(pos))] = minetest.add_entity(entpos, "npcs:npc_ent")
-
-	npcs.set_task(pos, "wait")
+	npcs.active[npcs.pts(pos)] = minetest.add_entity(entpos, "npcs:npc_ent")
 	npcs.log("Activated npc at "..minetest.pos_to_string(pos))
 end
 
 function npcs.deactivate_npc(pos)
-	npcs.active[minetest.pos_to_string(vector.round(pos))] = nil
+	npcs.active[npcs.pts(pos)] = nil
 	npcs.log("Deactivated npc at "..minetest.pos_to_string(pos))
 end

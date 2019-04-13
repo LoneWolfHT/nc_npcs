@@ -18,5 +18,5 @@ function pathfinder.find(pos1, pos2, maxpts)
 		pos = path[pos]
 	end
 
-	return(npath)
+	return npath, solved
 end
