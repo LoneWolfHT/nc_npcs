@@ -75,7 +75,7 @@ npcs.register_task("wait", {
 			end
 		end
 
-		minetest.get_meta(p):set_int("busy", 0)
+		minetest.get_meta(pos):set_int("busy", 0)
 	end
 })
 
@@ -108,7 +108,7 @@ npcs.register_task("dig_tree", {
 		end
 
 		minetest.set_node(rootpos, {name = "nc_tree:eggcorn_planted"})
-		minetest.get_meta(p):set_int("busy", 0)
+		minetest.get_meta(pos):set_int("busy", 0)
 	end
 })
 
@@ -170,7 +170,7 @@ minetest.register_globalstep(function(dtime)
 		end
 	end
 
-	if activate_step <= 20 then
+	if activate_step <= 1 then
 		activate_step = activate_step + dtime
 	else
 		for _, p in ipairs(npcs.active) do
