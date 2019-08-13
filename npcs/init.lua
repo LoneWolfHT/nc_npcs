@@ -44,75 +44,41 @@ function npcs.pts(pos) -- Pos to string, also rounds pos
 	return minetest.pos_to_string(vector.round(pos))
 end
 
+local function rand_rot()
+	local rots = {0, 90, 180, 270}
+
+	return(rots[math.random(1, 4)])
+end
+
 --
 --- NPCS
 --
 
-npcs.register_task("wait", {
-	info = "%s is planning their next move",
+npcs.register_task("find_tree", {
+	info = "%s is searching for a tree",
+	condition = function(pos)
+		local enough_wood = minetest.get_meta(pos):get_inventory():contains_item("main", "nc_woodwork:plank 45")
+		local tree = minetest.find_node_near(pos, 40, "nc_tree:root", false)
+
+		return (tree and vector.distance(pos, tree) > 4 and not enough_wood)
+	end,
 	func = function(pos)
-		local tree = minetest.find_node_near(pos, 50, "nc_tree:root", false)
-		local eggc = minetest.find_node_near(pos, 27, "nc_tree:eggcorn_planted", false)
-
-		if tree and not eggc then
-			npcs.move(pos, tree, {
-				on_end = function(s)
-					if s then
-						npcs.set_task(pos, "dig_tree")
-					else
-						tree = false
-					end
-				end
-			})
-		end
-
-		if not tree and eggc and vector.distance(pos, eggc) > 5 then
-			npcs.move(pos, eggc, {
-				on_end = function()
-					npcs.set_task(pos, "wait_tree")
-				end
-			})
-
-			return
-		end
-
-		if not eggc and not tree then
-			local pos_down = vector.new(pos.x, pos.y-1, pos.z)
-			local node_below = minetest.get_node(pos_down).name
-			local node_near = minetest.find_node_near(pos, 2, "group:soil", false)
-
-			if node_near then
-				minetest.set_node(node_near, {name = "nc_tree:eggcorn_planted"})
-				npcs.set_task(pos, "wait_tree")
-			elseif minetest.registered_nodes[node_below].groups and minetest.registered_nodes[node_below].groups.soil then
-				minetest.set_node(pos_down, {name = "nc_tree:eggcorn_planted"})
-				npcs.set_task(pos, "wait_tree")
+		npcs.move(pos, minetest.find_node_near(pos, 40, "nc_tree:root", false), {
+			on_end = function(newpos)
+				npcs.stop_task(newpos)
 			end
-
-			return
-		end
-
-		minetest.get_meta(pos):set_int("busy", 0)
+		})
 	end
 })
 
 npcs.register_task("dig_tree", {
 	info = "%s is cutting down a tree",
-	trigger = function(pos)
-		return (minetest.find_node_near(pos, 40, "nc_tree:root", false) ~= nil)
+	condition = function(pos)
+		local enough_wood = minetest.get_meta(pos):get_inventory():contains_item("main", "nc_woodwork:plank 45")
+		return (minetest.find_node_near(pos, 4.3, "nc_tree:root", false) ~= nil and not enough_wood)
 	end,
 	func = function(pos)
-		local rootpos = minetest.find_node_near(pos, 40, "nc_tree:root", false)
-
-		if vector.distance(pos, rootpos) > 4.1 then
-			npcs.move(pos, rootpos, {
-				on_end = function(s)
-					if s then
-						npcs.set_task(pos, "dig_tree")
-					end
-				end
-			})
-		end
+		local rootpos = minetest.find_node_near(pos, 4.3, "nc_tree:root", false)
 
 		local obj = npcs.active[npcs.pts(pos)]
 		local inv = minetest.get_meta(pos):get_inventory()
@@ -122,13 +88,14 @@ npcs.register_task("dig_tree", {
 			return
 		end
 
-		obj:set_animation(npcs.anim.mine)
+		obj:set_animation(npcs.anim.mine, 40)
+		obj:set_yaw(minetest.dir_to_yaw(vector.direction(pos, rootpos))*math.pi)
 
 		minetest.after(3, function()
 			nodecore.scan_flood(
 				vector.new(rootpos.x, rootpos.y+1, rootpos.z),
 				15,
-				function(p, d)
+				function(p)
 					local name = minetest.get_node(p).name
 
 					if name == "nc_tree:tree" or name == "nc_tree:leaves" then
@@ -147,53 +114,184 @@ npcs.register_task("dig_tree", {
 
 			minetest.set_node(rootpos, {name = "nc_terrain:dirt"})
 			obj:set_animation(npcs.anim.stand)
-			minetest.get_meta(pos):set_int("busy", 0)
+			npcs.set_task(pos, "plant_tree")
 		end)
+
+		return true
 	end
 })
 
-npcs.register_task("wait_tree", {
-	info = "%s is waiting for a tree to grow",
+npcs.register_task("plant_tree", {
+	info = "%s is planting a tree",
 	func = function(pos)
 		local obj = npcs.active[npcs.pts(pos)]
-
-		obj:set_animation(npcs.anim.sit)
-	end,
-	on_step = function(pos)
-		local obj = npcs.active[npcs.pts(pos)]
+		local eggc = minetest.find_node_near(pos, 5, "nc_tree:eggcorn_planted", false)
 		local tree = minetest.find_node_near(pos, 4, "nc_tree:root", false)
-		local eggc = minetest.find_node_near(pos, 4, "nc_tree:eggcorn_planted", false)
 
-		if tree then
-			obj:set_animation(npcs.anim.stand)
-			npcs.set_task(pos, "dig_tree")
-		elseif not eggc then
-			obj:set_animation(npcs.anim.stand)
+		if tree or eggc or not obj then return end
+
+		obj:set_animation(npcs.anim.mine)
+
+		local soil_near = minetest.find_node_near(pos, 10, "group:soil", false)
+		local node_near = minetest.find_node_near(pos, 2, "group:soil", false)
+
+		if node_near then
+			minetest.set_node(node_near, {name = "nc_tree:eggcorn_planted"})
+		elseif soil_near then
+			npcs.move(pos, soil_near, {})
+			return
+		end
+
+		obj:set_animation(npcs.anim.stand)
+	end
+})
+
+npcs.register_task("find_flat_area", {
+	info = "%s is searching for a flat area",
+	condition = function(pos)
+		local no_house_near = minetest.find_node_near(pos, 40, "npcs:housemarker", false) == nil
+		return (minetest.get_meta(pos):get_inventory():contains_item("main", "nc_woodwork:plank 45") and no_house_near)
+	end,
+	func = function(pos)
+		local nodes = minetest.find_nodes_in_area_under_air(vector.add(pos, 25), vector.subtract(pos, 25), "group:soil")
+		local whys = {} -- y positions
+
+		for _, p in ipairs(nodes) do
+			if not whys[p.y] then whys[p.y] = {} end
+			table.insert(whys[p.y], p)
+		end
+
+		for y in pairs(whys) do
+			if #whys[y] >= 45 then
+				for _, spos in ipairs(whys[y]) do
+					local mvect = vector.new(5, 5, 5)
+					local area = minetest.find_nodes_in_area(spos, vector.add(spos, mvect),
+					{"group:soil", "group:flammable", "group:green", "group:fire_fuel", "group:cracky", "group:npcs"})
+					local midpos = vector.add(spos, vector.new(2, 2, 2))
+
+					npcs.log(dump(minetest.get_node(midpos).name))
+
+					if #area == 36 then
+						minetest.place_schematic(
+							vector.new(spos.x, spos.y+1, spos.z),
+							minetest.get_modpath("npcs").."/houses/npcs_house.mts",
+							rand_rot(), nil, false, nil
+						)
+
+						npcs.move(pos, midpos, {
+							on_end = function(newpos)
+								npcs.stop_task(newpos)
+							end
+						})
+
+						return
+					end
+				end
+			end
 		end
 	end
 })
 
+npcs.register_task("build_house", {
+	info = "%s is building a house",
+	condition = function(pos)
+		local has_wood = minetest.get_meta(pos):get_inventory():contains_item("main", "nc_woodwork:plank")
+		return (minetest.find_node_near(pos, 4, "npcs:placehere", false) ~= nil and has_wood)
+	end,
+	func = function(pos)
+		local found_placehere = minetest.find_node_near(pos, 4, "npcs:placehere", false)
+		local inv = minetest.get_meta(pos):get_inventory()
+		local obj = npcs.active[npcs.pts(pos)]
+
+		obj:set_animation(npcs.anim.mine)
+
+		if found_placehere then
+			minetest.after(0.5, function()
+				obj:set_yaw(minetest.dir_to_yaw(vector.direction(pos, found_placehere))*math.pi)
+				minetest.set_node(found_placehere, {name = "nc_woodwork:plank"})
+				inv:remove_item("main", "nc_woodwork:plank")
+
+				npcs.set_task(pos, "build_house")
+			end)
+			return true
+		end
+
+		obj:set_animation(npcs.anim.stand)
+
+		npcs.stop_task(pos)
+	end
+})
+
+npcs.register_task("sleep", {
+	info = "%s is sleeping",
+	condition = function()
+		local time = minetest.get_timeofday()
+
+		return (time < 0.25 or time > 0.75)
+	end,
+	on_step = function(pos)
+		local time = minetest.get_timeofday()
+
+		if time >= 0.245 and time <= 0.755 then
+			npcs.stop_task(pos)
+		end
+	end,
+	func = function(pos)
+		local house_near = minetest.find_node_near(pos, 40, "npcs:housemarker", false)
+
+		if house_near then
+			npcs.move(pos, house_near, {
+				on_end = function(np, s)
+					local obj = npcs.active[npcs.pts(np)]
+
+					npcs.log("Sleep: "..dump(s))
+
+					if s then
+						obj:set_animation(npcs.anim.lay)
+					else
+						npcs.stop_task(np)
+					end
+				end
+			})
+			return true
+		end
+	end
+})
+
+npcs.register_task("rest", {
+	info = "%s is resting",
+	func = function(pos)
+		local obj = npcs.active[npcs.pts(pos)]
+
+		obj:set_animation(npcs.anim.sit)
+
+		minetest.after(math.random(7, 13), npcs.stop_task, pos)
+
+		return true
+	end
+})
+
 --
---- Mapgen and (L/A)BMs
+--- Mapgen and LBM/ABMs
 --
 
 minetest.register_ore({
 	ore_type       = "blob",
-	ore            = "npcs:npc_spawner",
+	ore            = "npcs:spawner",
 	wherein        = "nc_terrain:dirt_with_grass",
 	clust_scarcity = 30 * 30 * 30,
 	clust_num_ores = 1,
 	clust_size     = 1,
-	y_max          = 30,
-	y_min          = 0,
+	y_max          = 35,
+	y_min          = 5,
 })
 
 minetest.register_lbm({
 	label = "activate npcs",
 	name = "npcs:spawner",
-	nodenames = {"npcs:npc_spawner"},
+	nodenames = {"npcs:spawner"},
 	run_at_every_load = true,
-	action = function(pos, node)
+	action = function(pos)
 		local pos_up = vector.new(pos.x, pos.y+1, pos.z)
 
 		minetest.set_node(pos_up, {name = "npcs:npc"})
@@ -214,6 +312,18 @@ minetest.register_lbm({
 	end,
 })
 
+minetest.register_abm({
+	label = "activate npcs",
+	name = "npcs:activator",
+	nodenames = {"npcs:npc"},
+	interval = 10,
+	action = function(pos)
+		if not npcs.active[npcs.pts(pos)] then
+			npcs.activate_npc(pos)
+		end
+	end,
+})
+
 local deactivate_step = 0
 local activate_step = 0
 minetest.register_globalstep(function(dtime)
@@ -226,7 +336,7 @@ minetest.register_globalstep(function(dtime)
 			p = minetest.string_to_pos(p)
 
 			for _, player in ipairs(minetest.get_connected_players()) do
-				if vector.distance(player:get_pos(), p) >= 40 then
+				if vector.distance(player:get_pos(), p) >= 50 then
 					npcs.deactivate_npc(p)
 				end
 			end
@@ -240,13 +350,42 @@ minetest.register_globalstep(function(dtime)
 
 		for p in pairs(npcs.active) do
 			p = minetest.string_to_pos(p)
+			local meta = minetest.get_meta(p)
+			local p2 = vector.round(npcs.active[npcs.pts(p)]:get_pos())
 
-			if minetest.get_meta(p):get_int("busy") == 1 then
-				local stepfunc = npcs.tasks[minetest.get_meta(p):get_string("task")].on_step
+			if not vector.equals(p, p2) then
+				local metatable = meta:to_table()
+				local pu = vector.new(p.x, p.y+1, p.z)
+
+				minetest.remove_node(p)
+				minetest.remove_node(pu)
+
+				npcs.active[npcs.pts(p2)] = npcs.active[npcs.pts(p)]
+				npcs.active[npcs.pts(p)] = nil
+				p = p2
+				minetest.set_node(p, {name = "npcs:npc"})
+				minetest.set_node(vector.new(p.x, p.y+1, p.z), {name = "npcs:hidden"})
+				meta = minetest.get_meta(p)
+
+				meta:from_table(metatable)
+			end
+
+			if meta:get_int("busy") == 1 then
+				local stepfunc = npcs.tasks[meta:get_string("task")].on_step
 
 				if stepfunc then
 					stepfunc(p)
 				end
+			else
+				for tname, task in pairs(npcs.tasks) do
+					if task.condition and task.condition(p) and tname ~= meta:get_string("task") then
+						npcs.set_task(p, tname)
+						npcs.log("Set task to "..tname)
+						return
+					end
+				end
+
+				npcs.set_task(p, "rest")
 			end
 		end
 	end
@@ -259,6 +398,7 @@ end)
 minetest.register_entity("npcs:npc_ent", {
 	npc = true,
 	physical = true,
+	collide_with_objects = false,
 	pointable = false,
 	stepheight = 1.5,
 	time = 0,
@@ -266,40 +406,60 @@ minetest.register_entity("npcs:npc_ent", {
 	mesh = "nc_player_model.b3d",
 	static_save = false,
 	textures = {"npcs_blockfoot.png"},
-	collide_with_objects = false,
-	collisionbox = {0.5, 1.5, 0.5, -0.5, -0.3, -0.5},
+	collisionbox = {0.35, 1.5, 0.35, -0.35, 0, -0.35},
 	nodemeta = {},
+	on_step = function(self)
+		if not self.gopos then return end
+
+		local obj = self.object
+		local dir = vector.direction(obj:get_pos(), self.gopos)
+
+		local vel = vector.multiply(dir, 5)
+
+		vel.y = -7
+
+		obj:set_velocity(vel)
+		obj:set_yaw(minetest.dir_to_yaw(dir))
+	end,
 	move = function(obj, pos1, pos2, path)
 		local pos = obj:get_pos()
-		local ent_offset = vector.new(0, -0.5, 0)
+		local self = obj:get_luaentity()
 
 		if not path then
-			path = pathfinder.find(pos1, pos2, 500)
-			obj:set_pos(vector.add(pos1, ent_offset), false)
+			path = pathfinder.find(pos1, pos2, 555)
+			self.gopos = vector.round(pos1)
 		else
 			if not path[1] then
-				npcs.stop_move(obj, false)
+				npcs.stop_move(obj, true)
 				return
 			end
 
-			if minetest.get_node(path[1]).name == "air" then
-				obj:set_pos(vector.add(path[1], ent_offset), false)
-				table.remove(path, 1)
+			if minetest.registered_nodes[minetest.get_node(path[1]).name].walkable == false then
+				if vector.equals(vector.round(pos), self.gopos) then
+					self.gopos = vector.round(path[1])
+					table.remove(path, 1)
+				end
 			else
-				path = pathfinder.find(pos, pos2, 500)
+				path = pathfinder.find(pos, pos2, 555)
 
 				if path then
-					obj:set_pos(vector.add(path[1], ent_offset), false)
-					table.remove(path, 1)
+					if vector.equals(vector.round(pos), self.gopos) then
+						self.gopos = vector.round(path[1])
+						table.remove(path, 1)
+					end
 				else
+					npcs.log("Failed to find path")
 					npcs.stop_move(obj, false)
 				end
 			end
 		end
 
-		if vector.distance(pos, pos2) > 1 and path then
-			minetest.after(0.5, minetest.registered_entities["npcs:npc_ent"].move, obj, pos1, pos2, path)
+		local gp_up = vector.new(self.gopos.x, self.gopos.y+1, self.gopos.z)
+		if vector.distance(pos, pos2) > 1 and path and path[1] and minetest.get_node(gp_up).name == "air" then
+			minetest.after(0.4, minetest.registered_entities["npcs:npc_ent"].move, obj, pos1, pos2, path)
 		else
+			obj:set_velocity(vector.new(0, -7, 0))
+			obj:set_pos(vector.add(vector.round(pos), vector.new(0, -0.5, 0)))
 			npcs.stop_move(obj, true)
 		end
 	end

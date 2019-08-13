@@ -7,25 +7,26 @@ local astar = ...
 
 local alldirs = {
 	{x = 1, y = 0, z = 0},
-	{x = 1, y = 0, z = 1},
-	{x = 1, y = 0, z = -1},
+	--{x = 1, y = 0, z = 1},
+	--{x = 1, y = 0, z = -1},
 	{x = 0, y = 0, z = 1},
 	{x = 0, y = 0, z = -1},
 	{x = -1, y = 0, z = 0},
-	{x = -1, y = 0, z = 1},
-	{x = -1, y = 0, z = -1}
+	--{x = -1, y = 0, z = 1},
+	--{x = -1, y = 0, z = -1}
 }
 
 local openspaces = {}
 minetest.after(0, function()
 		for k, v in pairs(minetest.registered_nodes) do
-			if not v.walkable then openspaces[k] = true
+			if v.walkable == false then
+				openspaces[k] = true
 			end
 		end
 	end)
 
 local function findpath(start, target, maxpts)
-
+	maxpts = maxpts * 3
 	local pos_intern
 	do
 		local cache = {}
@@ -50,7 +51,7 @@ local function findpath(start, target, maxpts)
 		end
 		local below = addy(pos, -1)
 		if walkable(below) then return pos end
-		for y = 1, 5 do
+		for _ = 1, 5 do
 			pos = below
 			below = addy(pos, -1)
 			if walkable(below) then return pos end

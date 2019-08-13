@@ -22,52 +22,61 @@ function npcs.set_task(pos, name)
 	local npcname = meta:get_string("name")
 
 	if not npcs.tasks[name] then
-		npcs.log("No such task: "..dump(name))
+		npcs.log("No such task: "..(name))
 		return
 	end
 
 	meta:set_string("task", name)
 	meta:set_int("busy", 1)
 	meta:set_string("infotext", string.format(npcs.tasks[name].info, npcname))
-	npcs.tasks[name].func(pos)
+
+	local r = npcs.tasks[name].func(pos)
+
+	if not r then
+		npcs.stop_task(pos)
+	end
+end
+
+function npcs.stop_task(pos)
+	local meta = minetest.get_meta(pos)
+	local npcname = meta:get_string("name")
+
+	meta:set_int("busy", 0)
+	meta:set_string("infotext", npcname.." isn't doing anything at the moment")
 end
 
 -- Movement
 
 function npcs.move(pos1, pos2, def)
 	local obj = npcs.active[npcs.pts(pos1)]
-	local dist = vector.new(2, 2, 2)
+	npcs.active[npcs.pts(pos1)] = nil
 
-	minetest.get_meta(pos1):set_int("busy", 1)
 	obj:get_luaentity().nodemeta = minetest.get_meta(pos1):to_table()
 	obj:get_luaentity().def = def
 	minetest.remove_node(pos1)
 	minetest.remove_node(vector.new(pos1.x, pos1.y+1, pos1.z))
 
-	pos2 = minetest.find_nodes_in_area(vector.add(pos2, dist), vector.subtract(pos2, dist), "air")
+	if vector.equals(pos1, pos2) then
+		npcs.stop_move(obj, true)
+		return
+	end
 
 	if pos2 then
-		for _, p in ipairs(pos2) do
-			p.y = p.y + 1
-			local p_up = vector.new(p.x, p.y+1, p.z)
+		if minetest.get_node(pos2).name ~= "air" then
+			pos2 = minetest.find_node_near(pos2, 5, "air", false)
 
-			if minetest.get_node(p_up).name == "air" then
-				pos2 = p
-				break
+			if not pos2 then
+				npcs.log("Couldn't find any air near destination")
+				npcs.stop_move(obj, false)
+				return
 			end
 		end
 
-		if not pos2.x then
-			npcs.log("Couldn't find any air near destination")
-			npcs.stop_move(obj, false)
-			return
-		else
-			local pos_down = vector.new(pos2.x, pos2.y-1, pos2.z)
+		local pos_down = vector.new(pos2.x, pos2.y-1, pos2.z)
 
-			while minetest.get_node(pos_down).name == "air" do
-				pos2 = pos_down
-				pos_down = vector.new(pos2.x, pos2.y-1, pos2.z)
-			end
+		while minetest.get_node(pos_down).name == "air" do
+			pos2 = pos_down
+			pos_down = vector.new(pos2.x, pos2.y-1, pos2.z)
 		end
 
 		obj:set_animation(npcs.anim.walk, 40)
@@ -76,6 +85,8 @@ function npcs.move(pos1, pos2, def)
 		if s then
 			obj:get_luaentity().move(obj, pos1, pos2)
 		else
+			npcs.log(dump(pos2))
+			minetest.set_node(pos2, {name = "nc_optics:glass"})
 			npcs.log("Couldn't find a path")
 			npcs.stop_move(obj, false)
 		end
@@ -86,16 +97,16 @@ function npcs.move(pos1, pos2, def)
 end
 
 function npcs.stop_move(obj, success)
-	local pos = obj:get_pos()
+	local pos = vector.round(obj:get_pos())
 
 	minetest.set_node(pos, {name = "npcs:npc"})
 	minetest.set_node(vector.new(pos.x, pos.y+1, pos.z), {name = "npcs:hidden"})
 	minetest.get_meta(pos):from_table(obj:get_luaentity().nodemeta)
 	obj:set_animation(npcs.anim.stand)
-	minetest.get_meta(pos):set_int("busy", 0)
+	npcs.active[npcs.pts(pos)] = obj
 
 	if obj:get_luaentity().def and obj:get_luaentity().def.on_end then
-		obj:get_luaentity().def.on_end(success)
+		obj:get_luaentity().def.on_end(pos, success)
 		obj:get_luaentity().def = nil
 	end
 end
@@ -109,6 +120,7 @@ function npcs.activate_npc(pos)
 	local inv = meta:get_inventory()
 
 	inv:set_size("main", 8)
+	meta:set_int("busy", 0)
 
 	if meta:get_string("name") == "" then
 		meta:set_string("name", npcs.names[math.random(1, #npcs.names)])
@@ -123,6 +135,8 @@ function npcs.activate_npc(pos)
 end
 
 function npcs.deactivate_npc(pos)
+	npcs.stop_task(pos)
+	npcs.active[npcs.pts(pos)]:remove()
 	npcs.active[npcs.pts(pos)] = nil
 	npcs.log("Deactivated npc at "..minetest.pos_to_string(pos))
 end

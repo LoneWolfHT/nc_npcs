@@ -1,26 +1,4 @@
-minetest.register_node("npcs:npc", {
-	description = "You hacker you!!",
-	drawtype = "airlike",
-	paramtype = "light",
-	diggable = false,
-	light_source = 5,
-	selection_box = {
-		type = "fixed",
-		fixed = {0.45, 1.5, 0.25, -0.45, -0.5, -0.25},
-	},
-	collision_box = {
-		type = "fixed",
-		fixed = {0.45, 1.5, 0.25, -0.45, -0.5, -0.25},
-	},
-	on_punch = function(pos, node, puncher, pointed_thing)
-		npcs.log(minetest.serialize(minetest.get_meta(pos):to_table().fields))
-	end,
-	on_rightclick = function(pos, _, clicker)
-		minetest.show_formspec(clicker:get_player_name(), "npcs:inv", getform(pos))
-	end
-})
-
-function getform(pos)
+local function getform(pos)
 	local spos = pos.x .. "," .. pos.y .. "," .. pos.z
 	local formspec =
 		"size[8,9]" ..
@@ -32,12 +10,66 @@ function getform(pos)
 	return formspec
 end
 
+minetest.register_node("npcs:npc", {
+	description = "You hacker you!!",
+	drawtype = "airlike",
+	paramtype = "light",
+	diggable = false,
+	selection_box = {
+		type = "fixed",
+		fixed = {0.45, 1.5, 0.25, -0.45, -0.5, -0.25},
+	},
+	collision_box = {
+		type = "fixed",
+		fixed = {0.45, 1.5, 0.25, -0.45, -0.5, -0.25},
+	},
+	on_punch = function(pos) -- node, puncher, pointed_thing
+		if not npcs.active[npcs.pts(pos)] then
+			npcs.activate_npc(pos)
+		end
+		npcs.log(minetest.serialize(minetest.get_meta(pos):to_table().fields))
+	end,
+	on_rightclick = function(pos, _, clicker)
+		if not npcs.active[npcs.pts(pos)] then
+			npcs.activate_npc(pos)
+		end
+		minetest.show_formspec(clicker:get_player_name(), "npcs:inv", getform(pos))
+	end
+})
+
 minetest.register_node("npcs:hidden", {
 	description = "You big hacker you!!",
 	drawtype = "airlike",
 	paramtype = "light",
+	groups = {npcs = 1},
+	sunlight_propogates = true,
+	walkable = false,
 	diggable = false,
 	pointable = false,
 })
 
-minetest.register_node("npcs:npc_spawner", minetest.registered_nodes["nc_terrain:dirt_with_grass"])
+minetest.register_node("npcs:placehere", {
+	description = "How did you get this!?",
+	drawtype = "airlike",
+	paramtype = "light",
+	groups = {npcs = 1},
+	sunlight_propogates = true,
+	walkable = false,
+	diggable = false,
+	pointable = true,
+	buildable_to = true,
+})
+
+minetest.register_node("npcs:housemarker", {
+	description = "Stealing houses, eh?",
+	drawtype = "airlike",
+	paramtype = "light",
+	groups = {npcs = 1},
+	sunlight_propogates = true,
+	walkable = false,
+	diggable = false,
+	pointable = true,
+	buildable_to = true,
+})
+
+minetest.register_node("npcs:spawner", minetest.registered_nodes["nc_terrain:dirt_with_grass"])
